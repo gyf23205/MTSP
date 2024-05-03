@@ -51,7 +51,7 @@ def plot_var(file_lax, file_reinforce, ax, n_city):
 
 # def get_coordinate()
 
-def plot_tours_learning(model, dataset, device):
+def plot_tours_learning(model, dataset, device, name):
     model.to(device)
     model.eval()
 
@@ -61,12 +61,12 @@ def plot_tours_learning(model, dataset, device):
     batch_graph = Batch.from_data_list(data_list=data_list).to(device)
 
     # get pi
-    pi = model(batch_graph, n_nodes=data.shape[1], n_batch=dataset.shape[0])
+    pi = model(batch_graph, n_nodes=dataset.shape[1], n_batch=dataset.shape[0])
     # sample action and calculate log probabilities
     action, log_prob = action_sample(pi)
     # get reward for each batch
-    reward, routes_idx, routes_coords, all_length = my_get_cost(action, data, n_agent)  # reward: tensor [batch, 1]
-    fig, axs = plt.subplots(1, data.shape[0], squeeze=False)
+    reward, routes_idx, routes_coords, all_length = my_get_cost(action, dataset, n_agent)  # reward: tensor [batch, 1]
+    fig, axs = plt.subplots(1, dataset.shape[0], squeeze=False)
     print(all_length)
     xval = [0.8, 0.2, 0.2, 0.5, 0.8]
     yoffset = [-0.2, 0.1, -0.2, 0.3, 0.2]
@@ -74,19 +74,19 @@ def plot_tours_learning(model, dataset, device):
     for i in range(len(routes_coords)):
         for j in range(len(routes_coords[i])):
             axs[0, i].plot(routes_coords[i][j][:, 0], routes_coords[i][j][:, 1],marker='o',markersize=2.5, label='%.3f'%all_length[i][j])
-        axs[0, i].set_title('RL baseline', fontsize=15)
+        axs[0, i].set_title(f'{name}', fontsize=15)
         labellines.labelLines(axs[0, i].get_lines(), fontsize=15, color='k',fontweight='bold', align=False, xvals=xval,yoffsets=yoffset)#, xvals=xval,yoffsets=yoffset
-    plt.savefig("D:/Projects/DRL-MTSP-main/RL1.pdf", bbox_inches='tight')
+    plt.savefig(f"./results/{name}.pdf", bbox_inches='tight')
 
 def plot_tours_ortools(data, n_agent, time_limit, new):
     if new:
         dist_matrix = torch.cdist(data, data, p=2)
         reward, route_idx, all_length = my_solve_mtsp(dist_matrix, n_agent, time_limit)
-        pickle.dump(route_idx, open('route.p','wb'))
-        pickle.dump(all_length,open('all_length.p','wb'))
+        pickle.dump(route_idx, open('./results/route.p','wb'))
+        pickle.dump(all_length,open('.results/all_length.p','wb'))
     else:
-        route_idx = pickle.load(open('route.p','rb'))
-        all_length = pickle.load(open('all_length.p','rb'))
+        route_idx = pickle.load(open('./results/route.p','rb'))
+        all_length = pickle.load(open('./results/all_length.p','rb'))
     print(all_length)
     route_coords = []
     for i in range(len(route_idx)):
@@ -98,7 +98,7 @@ def plot_tours_ortools(data, n_agent, time_limit, new):
         ax[0,0].plot(route_coords[i][:, 0], route_coords[i][:, 1],marker='o',markersize=2.5, label='%.3f'%all_length[i])
         ax[0,0].set_title('ORTools', fontsize=15)
     labellines.labelLines(ax[0, 0].get_lines(), fontsize=15, color='k', fontweight='bold', align=False, xvals=xval)
-    plt.savefig("D:/Projects/DRL-MTSP-main/ORTools1.pdf", bbox_inches='tight')
+    plt.savefig("./results/ORTools1.pdf", bbox_inches='tight')
 
 
 if __name__ == '__main__':
@@ -111,16 +111,10 @@ if __name__ == '__main__':
     os.environ['PYTHONHASHSEED'] = str(manual_seed)
     mpl.rcParams['pdf.fonttype'] = 42
     mpl.rcParams['ps.fonttype'] = 42
-    # fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(10, 7))
-    # fig.set_figheight(5)
-    # plot_var('./log_var_lax1.txt', './log_var_reinforce1.txt', axs[0], 100)
-    # plot_var('./log_var_lax.txt', './log_var_reinforce.txt', axs[1], 50)
-    # plt.savefig("var_hist.pdf", bbox_inches='tight')
-    # Code under here plots tours
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     n_agent = 5
-    n_node_train = 100
+    n_node_train = 50
     n_nodes = 500
     batch_size = 2
     seed = 1
@@ -147,14 +141,14 @@ if __name__ == '__main__':
         for j in range(1):
             data = testing_data[j]
             if name in ['iMTSP', 'RL']:
-                plot_tours_learning(policy, data.unsqueeze(0), dev)
+                plot_tours_learning(policy, data.unsqueeze(0), dev, name)
             else:
                 plot_tours_ortools(data, n_agent, time_limit, False)
     else:
         fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(10, 7))
         fig.set_figheight(5)
-        plot_var('./log_var_lax1.txt', './log_var_reinforce1.txt', axs[0], 100)
-        plot_var('./log_var_lax.txt', './log_var_reinforce.txt', axs[1], 50)
+        plot_var('./results/log_var_lax1.txt', './results/log_var_reinforce1.txt', axs[0], 100)
+        plot_var('./results/log_var_lax.txt', './results/log_var_reinforce.txt', axs[1], 50)
         plt.savefig("var_hist.pdf", bbox_inches='tight')
 
 

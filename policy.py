@@ -4,7 +4,8 @@ import torch.nn.functional as F
 import torch
 import math
 from torch.distributions import Categorical
-from ortools_tsp import solve
+from ortools_tsp import solve, my_solve
+from ortools_mtsp import my_solve_mtsp
 
 
 class Agentembedding(nn.Module):
@@ -65,14 +66,14 @@ class Policy(nn.Module):
         super(Policy, self).__init__()
         self.c = clipping
         self.key_size_policy = key_size_policy
-        self.key_policy = nn.Linear(hid_chnl, self.key_size_policy, device=dev)
-        self.q_policy = nn.Linear(val_size, self.key_size_policy, device=dev)
+        self.key_policy = nn.Linear(hid_chnl, self.key_size_policy).to(dev)
+        self.q_policy = nn.Linear(val_size, self.key_size_policy).to(dev)
 
         # embed network
         self.embed = AgentAndNode_embedding(in_chnl=in_chnl, hid_chnl=hid_chnl, n_agent=n_agent,
                                             key_size=key_size_embd, value_size=val_size, dev=dev)
 
-    def forward(self, batch_graph, n_nodes, n_batch):
+    def forward(self, batch_graph, n_nodes, n_batch):  # batch?
 
         agent_embeddings, nodes_h_no_depot = self.embed(batch_graph, n_nodes, n_batch)
 
@@ -100,7 +101,7 @@ def get_log_prob(pi, action_int):
 
 def get_cost(action, data, n_agent):
     subtour_max_lengths = [0 for _ in range(data.shape[0])]
-    data = data * 1000  # why?
+    data = data * 1000 
     depot = data[:, 0, :].tolist()
     sub_tours = [[[] for _ in range(n_agent)] for _ in range(data.shape[0])]
     for i in range(data.shape[0]):
@@ -118,6 +119,33 @@ def get_cost(action, data, n_agent):
     return subtour_max_lengths
 
 
+def my_get_cost(action, data, n_agent):
+    subtour_max_lengths = [0 for _ in range(data.shape[0])]
+    routes_idx = [[] for _ in range(data.shape[0])]
+    routes_coords = [[] for _ in range(data.shape[0])]
+    all_length = [[] for _ in range(data.shape[0])]
+    data = data * 1000  # why?
+    depot = data[:, 0, :].tolist()
+    sub_tours = [[[] for _ in range(n_agent)] for _ in range(data.shape[0])]
+    city_indices = [[[0] for _ in range(n_agent)] for _ in range(data.shape[0])]
+    for i in range(data.shape[0]):
+        for tour in sub_tours[i]:
+            tour.append(depot[i])
+        for idx, (n, m) in enumerate(zip(action.tolist()[i], data.tolist()[i][1:])):
+            sub_tours[i][n].append(m)
+            city_indices[i][n].append(idx+1)
+
+    for k in range(data.shape[0]):
+        for a in range(n_agent):
+            instance = sub_tours[k][a]
+            route, sub_tour_length = my_solve(instance, city_indices[k][a])
+            routes_idx[k].append(route)
+            routes_coords[k].append(data[k,route,:]/1000)
+            all_length[k].append(sub_tour_length)
+            if sub_tour_length >= subtour_max_lengths[k]:
+                subtour_max_lengths[k] = sub_tour_length
+    return subtour_max_lengths, routes_idx, routes_coords, all_length
+
 class Surrogate(nn.Module):
     def __init__(self, in_dim: int, out_dim: int, n_hidden: int = 64, nonlin: str = 'relu', dev='cpu', **kwargs):
         super(Surrogate, self).__init__()
@@ -125,9 +153,9 @@ class Surrogate(nn.Module):
                      sigmoid=nn.Sigmoid(), softplus=nn.Softplus(), lrelu=nn.LeakyReLU(),
                      elu=nn.ELU())
 
-        self.layer = nn.Linear(in_dim, n_hidden, device=dev)
-        self.layer2 = nn.Linear(n_hidden, n_hidden, device=dev)
-        self.out = nn.Linear(n_hidden, out_dim, device=dev)
+        self.layer = nn.Linear(in_dim, n_hidden).to(dev)
+        self.layer2 = nn.Linear(n_hidden, n_hidden).to(dev)
+        self.out = nn.Linear(n_hidden, out_dim, bias=False).to(dev)
         self.nonlin = nlist[nonlin]
 
     def forward(self, x, **kwargs):
@@ -138,3 +166,36 @@ class Surrogate(nn.Module):
         x = self.out(x)
 
         return x
+
+
+if __name__ == '__main__':
+    from torch_geometric.data import Data
+    from torch_geometric.data import Batch
+
+    dev = 'cpu'
+    torch.manual_seed(2)
+
+    n_agent = 4
+    n_nodes = 6
+    n_batch = 3
+    # get batch graphs data list
+    fea = torch.randint(low=0, high=100, size=[n_batch, n_nodes, 2]).to(torch.float)  # [batch, nodes, fea]
+    adj = torch.ones([fea.shape[0], fea.shape[1], fea.shape[1]])
+    data_list = [Data(x=fea[i], edge_index=torch.nonzero(adj[i]).t()) for i in range(fea.shape[0])]
+    # generate batch graph
+    batch_graph = Batch.from_data_list(data_list=data_list).to(dev)
+
+    # test policy
+    policy = Policy(in_chnl=fea.shape[-1], hid_chnl=32, n_agent=n_agent, key_size_embd=64,
+                    key_size_policy=64, val_size=64, clipping=10, dev=dev)
+
+    pi = policy(batch_graph, n_nodes, n_batch)
+
+    grad = torch.autograd.grad(pi.sum(), [param for param in policy.parameters()])
+
+    action, log_prob = action_sample(pi)
+    # print(log_prob)
+
+    rewards = get_cost(action, fea, n_agent)
+
+    print(rewards)
