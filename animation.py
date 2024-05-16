@@ -10,6 +10,7 @@ from policy import action_sample, get_cost, Policy, my_get_cost
 from ortools_mtsp import my_solve_mtsp
 import random
 import os
+import pickle
 from functools import partial
 from matplotlib.animation import PillowWriter
 
@@ -80,14 +81,15 @@ class AnimationDrawer(object):
             for j in range(self.n_agent):
                 if fr <= routes[i][j].shape[0]:
                     self.ax.plot(routes[i][j][:fr,0], routes[i][j][:fr,1], color=colors[j])
+            self.ax.set_title(name)
             self.ax.set_xlim([0,1])
             self.ax.set_ylim([0,1])
 
         for i in range(len(routes)):
             self.ax.clear()
-            ax.scatter(self.dataset[i][:,0], self.dataset[i][:,1])
+            ax.scatter(self.dataset[i][:,0], self.dataset[i][:,1], s=10)
             ani = FuncAnimation(self.fig, partial(draw_one, i=i), frames=route_length[i], interval=10, repeat=False)
-            ani.save(f"imgs/route_ani_{i}.gif", dpi=300,writer=PillowWriter(fps=12))
+            ani.save(f"imgs/route_ani_{name}_{n_node_train}_{i}.gif", dpi=300,writer=PillowWriter(fps=40))
 
 
 
@@ -104,13 +106,13 @@ if __name__ == '__main__':
     dev = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     n_agent = 5
-    n_node_train = 50
-    n_nodes = 50
-    batch_size = 1
+    n_node_train = 100
+    n_nodes = 500
+    batch_size = 2
     seed = 1
     time_limit = 1800
     names = ['iMTSP', 'RL', 'ORTools', 'Var']
-    name = 'iMTSP'
+    name = 'ORTools'
     if name == 'iMTSP':
         policy = Policy(in_chnl=2, hid_chnl=64, n_agent=n_agent, key_size_embd=32,
             key_size_policy=128, val_size=16, clipping=10, dev=dev)
@@ -122,6 +124,7 @@ if __name__ == '__main__':
         path = './saved_model/RL_{}.pth'.format(str(n_node_train) + '_' + str(n_agent))
         policy.load_state_dict(torch.load(path, map_location=torch.device(dev)))
     elif name in ['ORTools', 'Var']:
+        policy = None
         pass
     else:
         raise KeyError('name not defined')
@@ -130,5 +133,13 @@ if __name__ == '__main__':
     print(testing_data.shape)
     fig, ax = plt.subplots()
     drawer = AnimationDrawer(testing_data, n_agent, policy, dev, fig, ax)
-    drawer.solve()
-    drawer.draw()
+    if name in ['RL', 'iMTSP']:
+        drawer.solve()
+        drawer.draw()
+    else:
+        route_idx = pickle.load(open('./results/route.p','rb'))
+        route_coords = [[] for _ in range(batch_size)]
+        for i in range(batch_size):
+            for j in range(len(route_idx)):
+                route_coords.append(testing_data[i][route_idx[i], :])
+        drawer.draw()

@@ -82,11 +82,11 @@ def plot_tours_ortools(data, n_agent, time_limit, new):
     if new:
         dist_matrix = torch.cdist(data, data, p=2)
         reward, route_idx, all_length = my_solve_mtsp(dist_matrix, n_agent, time_limit)
-        pickle.dump(route_idx, open('./results/route.p','wb'))
-        pickle.dump(all_length,open('.results/all_length.p','wb'))
+        pickle.dump(route_idx, open(f'./results/route_{j}.p','wb'))
+        pickle.dump(all_length,open(f'.results/all_length_{j}.p','wb'))
     else:
-        route_idx = pickle.load(open('./results/route.p','rb'))
-        all_length = pickle.load(open('./results/all_length.p','rb'))
+        route_idx = pickle.load(open(f'./results/route_{j}.p','rb'))
+        all_length = pickle.load(open(f'./results/all_length_{j}.p','rb'))
     print(all_length)
     route_coords = []
     for i in range(len(route_idx)):
@@ -120,7 +120,7 @@ if __name__ == '__main__':
     seed = 1
     time_limit = 1800
     names = ['iMTSP', 'RL', 'ORTools', 'Var']
-    name = 'iMTSP'
+    name = 'ORTools'
     if name == 'iMTSP':
         policy = Policy(in_chnl=2, hid_chnl=64, n_agent=n_agent, key_size_embd=32,
             key_size_policy=128, val_size=16, clipping=10, dev=dev)
@@ -143,7 +143,7 @@ if __name__ == '__main__':
             if name in ['iMTSP', 'RL']:
                 plot_tours_learning(policy, data.unsqueeze(0), dev, name)
             else:
-                plot_tours_ortools(data, n_agent, time_limit, False)
+                plot_tours_ortools(data, n_agent, time_limit, True)
     else:
         fig, axs = plt.subplots(nrows=1, ncols=2, figsize=(10, 7))
         fig.set_figheight(5)
